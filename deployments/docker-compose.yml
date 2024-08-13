@@ -1,0 +1,77 @@
+services:
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - /home/ubuntu/certs/.env
+    networks:
+      - backend
+    restart: on-failure
+
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "8001:8001"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    restart: on-failure
+
+  django:
+    build:
+      context: ../  # Adjust if necessary to the root of your Django project
+      dockerfile: deployments/Dockerfile
+    command: [ "./deployments/wait-for-it.sh", "db:5432", "--", "gunicorn", "chanakya_backend.wsgi:application", "--bind", "0.0.0.0:8000" ]
+    env_file:
+      - /home/ubuntu/certs/.env
+    depends_on:
+      - db
+      - redis
+    networks:
+      - backend
+      - frontend
+    restart: on-failure
+
+  celery:
+    build:
+      context: ../  # Adjust if necessary to the root of your Django project
+      dockerfile: deployments/Dockerfile
+    command: celery -A chanakya_backend.celery_config worker --loglevel=info
+    env_file:
+      - /home/ubuntu/certs/.env
+    depends_on:
+      - db
+      - redis
+    networks:
+      - backend
+    restart: on-failure
+
+  nginx:
+    image: nginx:1.19-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+      - /home/ubuntu/certs:/etc/nginx/ssl:ro
+      - static_volume:/app/static
+      - media_volume:/app/media
+    depends_on:
+      - django
+    networks:
+      - frontend
+    restart: on-failure
+
+
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+  redis_data:
+
+networks:
+  frontend:
+  backend:
